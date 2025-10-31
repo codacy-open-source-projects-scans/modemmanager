@@ -1,0 +1,9 @@
+*~
+*.bz2
+*.pyc
+tags
+/.vscode
+/cscope.out
+/.cache
+subprojects/libmbim
+subprojects/libqmi
