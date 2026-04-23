@@ -143,9 +143,19 @@ if plugins_shared['mtk']
     'mtk/mm-shared-mtk.c',
   )
 
+  incs = plugins_incs
+  if enable_mbim
+    incs += [fibocom_inc]
+    sources += files(
+      'mtk/mm-bearer-mbim-mtk-fibocom.c',
+      'mtk/mm-broadband-modem-mbim-mtk.c',
+      'mtk/mm-broadband-modem-mbim-mtk-fibocom.c',
+    )
+  endif
+
   plugins += {'shared-mtk': {
     'plugin': false,
-    'module': {'sources': sources, 'include_directories': plugins_incs, 'c_args': c_args},
+    'module': {'sources': sources, 'include_directories': incs, 'c_args': c_args},
   }}
 endif
 
@@ -758,15 +768,6 @@ if plugins_options['mtk']
     'mtk/mm-plugin-mtk.c',
   )
 
-  if enable_mbim
-    incs += [fibocom_inc]
-    sources += files(
-      'mtk/mm-bearer-mbim-mtk-fibocom.c',
-      'mtk/mm-broadband-modem-mbim-mtk.c',
-      'mtk/mm-broadband-modem-mbim-mtk-fibocom.c',
-    )
-  endif
-
   plugins += {'plugin-mtk': {
     'plugin': true,
     'module': {'sources': sources, 'include_directories': incs, 'c_args': '-DMM_MODULE_NAME="mtk"'},
@@ -905,7 +906,7 @@ if plugins_options['rolling']
   test_udev_rules_dir_c_args = ['-DTESTUDEVRULESDIR_ROLLING="@0@"'.format(plugins_dir / 'rolling')]
   plugins_test_udev_rules_dir_c_args += test_udev_rules_dir_c_args
 
-  incs = plugins_incs + [fibocom_inc]
+  incs = plugins_incs + [fibocom_inc] + [mtk_inc]
 
   sources = files(
     'rolling/mm-plugin-rolling.c',
