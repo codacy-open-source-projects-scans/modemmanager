@@ -176,8 +176,10 @@ in use, like \fIBearer\fR. For example:
 .RE
 
 .TP
-.B \-m, \-\-modem=[PATH|INDEX]
-Specify a modem.
+.B \-m, \-\-modem=[PATH|INDEX|any]
+Specify a modem via full D-Bus object path, modem index, or 'any'. 'any' selects
+the first available modem regardless of index or path, which can simplify
+operation for single-modem systems.
 .TP
 .B \-b, \-\-bearer=[PATH|INDEX]
 Specify a bearer.
@@ -496,6 +498,10 @@ This DBus property signal updates are by default disabled.
 .B \-\-location\-set\-disable\-signal
 Disable reporting location updates via DBus property signals.
 
+.TP
+.B \-\-location\-monitor
+Continuously monitor all available location information.
+
 .SH MESSAGING OPTIONS
 All messaging options must be used with \fB\-\-modem\fR or \fB\-m\fR.
 
@@ -764,7 +770,7 @@ Set the list of channels on which cell broadcasts are received (e.g. \fB5370,537
 You'll need first to know which the proper path/index is for the SIM in your
 modem:
 .Bd -literal -compact
-    $ mmcli -m 0 -K | grep "modem.generic.sim" | awk -F ": " '{ print $2 }'
+    $ mmcli -m any -K | grep "modem.generic.sim" | awk -F ": " '{ print $2 }'
     /org/freedesktop/ModemManager1/SIM/0
 .Ed
 
@@ -778,13 +784,13 @@ And after that, you can just use the SIM index:
 
 You can launch the simple connection process like:
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --simple-connect="pin=1234,apn=internet"
+    $ sudo mmcli -m any --simple-connect="pin=1234,apn=internet"
     successfully connected the modem
 .Ed
 
 Then, you can disconnect it like:
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --simple-disconnect
+    $ sudo mmcli -m any --simple-disconnect
     successfully disconnected all bearers in the modem
 .Ed
 
@@ -793,7 +799,7 @@ Then, you can disconnect it like:
 Scanning for 3GPP networks may really take a long time, so a specific timeout
 must be given:
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --3gpp-scan --timeout=300
+    $ sudo mmcli -m any --3gpp-scan --timeout=300
       ---------------------
       3GPP scan | networks: 21403 - Orange SP (gprs, unknown)
                 |           21407 - Movistar (gprs, unknown)
@@ -806,7 +812,7 @@ must be given:
 Using the “sm” (SIM), you can do this using:
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --messaging-create-sms="text='Hello world',number='+1234567890'"
+    $ sudo mmcli -m any --messaging-create-sms="text='Hello world',number='+1234567890'"
     Successfully created new SMS:
         /org/freedesktop/ModemManager1/SMS/21 (unknown)
 
@@ -829,7 +835,7 @@ Using the “sm” (SIM), you can do this using:
                  |   delivery report: not requested
                  | message reference: 0
 
-    $ sudo mmcli -m 0 --messaging-status
+    $ sudo mmcli -m any --messaging-status
       ----------------------------
       Messaging | supported storages: sm, me
                 |    default storage: me
@@ -841,7 +847,7 @@ As you can see below, the important part is the
 \fB\-\-messaging\-create\-sms\-with\-data\fR and the \fBPATH\fR provided.
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 \\
+    $ sudo mmcli -m any \\
            --messaging-create-sms="number='+1234567890'" \\
            --messaging-create-sms-with-data=/path/to/your/file
     Successfully created new SMS:
@@ -858,7 +864,7 @@ recover the sent file with another \fBmmcli\fR command in their
 ModemManager setup:
 
 .Bd -literal -compact
-    $> sudo mmcli -m 0 --messaging-list-sms
+    $> sudo mmcli -m any --messaging-list-sms
         /org/freedesktop/ModemManager1/SMS/0 (received)
 
     $> sudo mmcli -s 0 --create-file-with-data=/path/to/the/output/file
@@ -872,7 +878,7 @@ if you have more than one modem, just use --list-modems to check the
 proper modem index:
 
 .Bd -literal -compact
-    $ mmcli -m 0 --location-status
+    $ mmcli -m any --location-status
       ----------------------------
       Location | capabilities: 3gpp-lac-ci, gps-raw, gps-nmea
                |      enabled: none
@@ -884,10 +890,10 @@ ID, GPS raw and GPS-NMEA location sources. None is enabled yet, as we
 didn’t enable the modem, which we can do issuing:
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --enable
+    $ sudo mmcli -m any --enable
     successfully enabled the modem
 
-    $ mmcli -m 0 --location-status
+    $ mmcli -m any --location-status
       ----------------------------
       Location | capabilities: 3gpp-lac-ci, gps-raw, gps-nmea
                |      enabled: 3gpp-lac-ci
@@ -899,7 +905,7 @@ didn’t enable the modem, which we can do issuing:
 We can start the GPS engine by enabling the RAW or NMEA GPS location sources:
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 \\
+    $ sudo mmcli -m any \\
                  --location-enable-gps-raw \\
                  --location-enable-gps-nmea
     successfully setup location gathering
@@ -908,7 +914,7 @@ We can start the GPS engine by enabling the RAW or NMEA GPS location sources:
 If we do check again the status, we’ll see the GPS-specific locations are enabled:
 
 .Bd -literal -compact
-    $ mmcli -m 0 --location-status
+    $ mmcli -m any --location-status
       --------------------------------
       Location | capabilities: 3gpp-lac-ci, gps-raw, gps-nmea
                |      enabled: 3gpp-lac-ci, gps-raw, gps-nmea
@@ -922,7 +928,7 @@ If any of the specific outputs is not available, the corresponding section will
 be omitted from the output.
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 --location-get
+    $ sudo mmcli -m any --location-get
       -------------------------
       3GPP location   | Mobile country code: 214
                       | Mobile network code: 3
@@ -939,6 +945,33 @@ be omitted from the output.
                       | $GPVTG,,T,,M,,N,,K,N*2C
 .Ed
 
+Location information may be continuously monitored using
+\fB\-\-location\-monitor\fR, which watches 'Location' property updates. Note
+that these updates must first be enabled with
+\fB\-\-location\-set\-enable\-signal\fR.
+
+.Bd -literal -compact
+    $ sudo mmcli -m 0 --location-set-gps-refresh-rate=10
+    successfully set GPS refresh rate
+
+    $ sudo mmcli -m 0 --location-enable-gps-nmea --location-set-enable-signal
+    successfully setup location gathering
+
+    $ sudo mmcli -m 0 --location-monitor
+      -----------
+      GPS | nmea: $GPGSA,A,2,03,04,06,07,09,,,,,,,,1.7,1.4,1.0*3E
+          |       $GPGSV,3,1,11,03,38,123,37,04,56,037,18,06,41,277,21,07,52,209,32*75
+          |       $GPGSV,3,2,11,09,61,320,23,11,17,313,19,30,12,217,24,01,02,168,*77
+          |       $GPGSV,3,3,11,16,21,077,,26,13,047,,40,,,36*79
+          |       $GPGGA,152454.00,3651.420706,N,03101.297031,E,1,05,1.4,128.4,M,32.0,M,,*6A
+      -----------
+      GPS | nmea: $GPGSA,A,2,03,04,06,07,09,,,,,,,,1.7,1.4,1.0*3E
+          |       $GPGSV,3,1,11,03,38,123,37,04,56,037,24,06,41,277,20,07,52,209,33*7A
+          |       $GPGSV,3,2,11,09,61,320,23,11,17,313,18,30,12,217,23,01,02,168,*71
+          |       $GPGSV,3,3,11,16,21,077,,26,13,047,,40,,,36*79
+          |       $GPGGA,152504.00,3651.420036,N,03101.297176,E,1,05,1.4,60.7,M,32.0,M,,*56
+.Ed
+
 .SS A-GPS support
 
 If A-GPS is enabled before starting the GPS engine, and if a data connection
@@ -950,7 +983,7 @@ enabled. An explicit output (RAW or NMEA) is required to be enabled in order
 to start the GPS engine.
 
 .Bd -literal -compact
-    $ mmcli -m 0 --location-status
+    $ mmcli -m any --location-status
       --------------------------------
       Location |      capabilities: 3gpp-lac-ci, gps-raw, gps-nmea, agps-msa, agps-msb
                |           enabled: 3gpp-lac-ci
@@ -959,13 +992,13 @@ to start the GPS engine.
       GPS      |      refresh rate: 30 seconds
                | a-gps supl server: supl.google.com:7276
 
-    $ sudo mmcli -m 0 --location-enable-agps-msa
+    $ sudo mmcli -m any --location-enable-agps-msa
     successfully setup location gathering
 
-    $ sudo mmcli -m 0 --location-enable-gps-nmea
+    $ sudo mmcli -m any --location-enable-gps-nmea
     successfully setup location gathering
 
-    $ sudo mmcli -m 0 --location-enable-gps-raw
+    $ sudo mmcli -m any --location-enable-gps-raw
     successfully setup location gathering
 .Ed
 
@@ -981,7 +1014,7 @@ one of the servers listed by ModemManager and manually inject it afterwards. The
 XTRA assistance data is usually valid for several days.
 
 .Bd -literal -compact
-    $ mmcli -m 0 --location-status
+    $ mmcli -m any --location-status
       --------------------------------
       Location |         capabilities: 3gpp-lac-ci, gps-raw, gps-nmea, agps-msa, agps-msb
                |              enabled: 3gpp-lac-ci
@@ -996,13 +1029,13 @@ XTRA assistance data is usually valid for several days.
 
     $ wget -q https://xtrapath3.izatcloud.net/xtra3grcej.bin
 
-    $ sudo mmcli -m 0 --location-inject-assistance-data=./xtra3grcej.bin
+    $ sudo mmcli -m any --location-inject-assistance-data=./xtra3grcej.bin
     successfully injected assistance data
 
-    $ sudo mmcli -m 0 --location-enable-gps-nmea
+    $ sudo mmcli -m any --location-enable-gps-nmea
     successfully setup location gathering
 
-    $ sudo mmcli -m 0 --location-enable-gps-raw
+    $ sudo mmcli -m any --location-enable-gps-raw
     successfully setup location gathering
 .Ed
 
@@ -1011,7 +1044,7 @@ XTRA assistance data is usually valid for several days.
 The channel list can be set as a comma separated list of channels or channel intervals:
 
 .Bd -literal -compact
-    $ sudo mmcli -m 0 \\
+    $ sudo mmcli -m any \\
                  --cell-broadcast-set-channels=5370,5371,5373-5000
     successfully set channels in the modem
 .Ed
@@ -1024,7 +1057,7 @@ example, you could gather all the main status information of the modem
 with a single call and then parse it to read single fields:
 
 .Bd -literal -compact
-    $ STATUS=$(mmcli -m 0 --output-keyvalue)
+    $ STATUS=$(mmcli -m any --output-keyvalue)
     $ echo "${STATUS}" | grep "modem.generic.state " | awk -F ": " '{ print $2 }'
     failed
     $ echo "${STATUS}" | grep "modem.generic.state-failed-reason " | awk -F ": " '{ print $2 }'

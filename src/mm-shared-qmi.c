@@ -3111,6 +3111,12 @@ list_configs_indication (QmiClientPdc                      *client,
     self = g_task_get_source_object (task);
     ctx  = g_task_get_task_data (task);
 
+    /* Disconnect list-configs indication right away to avoid re-entry */
+    if (ctx->list_configs_indication_id) {
+        g_signal_handler_disconnect (ctx->client, ctx->list_configs_indication_id);
+        ctx->list_configs_indication_id = 0;
+    }
+
     if (!qmi_indication_pdc_list_configs_output_get_indication_result (output, &error_code, &error)) {
         load_carrier_config_abort (task, error);
         return;
@@ -6595,21 +6601,22 @@ loc_unlock_location_engine_ready (QmiClientLoc *client,
     QmiMessageLocSetEngineLockOutput *output;
     GError                           *error = NULL;
 
+    self = g_task_get_source_object (task);
+
     output = qmi_client_loc_set_engine_lock_finish (client, res, &error);
     if (!output) {
-        mm_obj_warn (client, "QMI operation failed: %s", error->message);
+        mm_obj_warn (self, "QMI operation failed: %s", error->message);
         g_error_free (error);
     }
 
     if (!qmi_message_loc_set_engine_lock_output_get_result (output, &error)
      && !g_error_matches (error, QMI_PROTOCOL_ERROR, QMI_PROTOCOL_ERROR_NO_PERMISSION)) {
-        mm_obj_warn (client, "Couldn't unlock GPS engine: %s", error->message);
+        mm_obj_warn (self, "Couldn't unlock GPS engine: %s", error->message);
         g_error_free (error);
     }
 
     qmi_message_loc_set_engine_lock_output_unref (output);
 
-    self = g_task_get_source_object (task);
     location_load_capabilities (self, task);
 }
 
@@ -7044,19 +7051,19 @@ loc_register_event_inject_req_ready (QmiClientLoc *client,
     MMSharedQmi                                  *self;
     Private                                      *priv;
 
+    self = g_task_get_source_object (task);
+    priv = get_private (self);
+
     output = qmi_client_loc_register_events_finish (client, res, &error);
     if (!output) {
-        mm_obj_warn (client, "QMI operation failed: %s", error->message);
+        mm_obj_warn (self, "QMI operation failed: %s", error->message);
         goto out;
     }
 
     if (!qmi_message_loc_register_events_output_get_result (output, &error)) {
-        mm_obj_warn (client, "Couldn't not register tracking events: %s", error->message);
+        mm_obj_warn (self, "Couldn't not register tracking events: %s", error->message);
         goto out;
     }
-
-    self = g_task_get_source_object (task);
-    priv = get_private (self);
 
     g_assert (!priv->loc_assistance_inject_time_req_indication_id);
     priv->loc_assistance_inject_time_req_indication_id =
@@ -7277,7 +7284,7 @@ loc_location_inject_data_indication_timed_out (GTask *task)
     ctx->timeout_id = 0;
 
     g_task_return_new_error (task, MM_CORE_ERROR, MM_CORE_ERROR_ABORTED,
-                             "Failed to receive indication with the server update result");
+                             "Failed to receive indication with the injection data result");
     g_object_unref (task);
     return G_SOURCE_REMOVE;
 }

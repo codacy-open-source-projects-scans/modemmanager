@@ -1088,8 +1088,8 @@ test_normalize_operator (void)
 /* Test CREG/CGREG responses and unsolicited messages */
 
 typedef struct {
-    GPtrArray *solicited_creg;
-    GPtrArray *unsolicited_creg;
+    GRegex *solicited_creg;
+    GRegex *unsolicited_creg;
 } RegTestData;
 
 static RegTestData *
@@ -1106,8 +1106,8 @@ reg_test_data_new (void)
 static void
 reg_test_data_free (RegTestData *data)
 {
-    mm_3gpp_creg_regex_destroy (data->solicited_creg);
-    mm_3gpp_creg_regex_destroy (data->unsolicited_creg);
+    g_regex_unref (data->solicited_creg);
+    g_regex_unref (data->unsolicited_creg);
     g_free (data);
 }
 
@@ -1131,52 +1131,42 @@ test_creg_match (const char *test,
                  const CregResult *result)
 {
     g_autoptr(GMatchInfo)         info  = NULL;
-    guint                         i;
     MMModem3gppRegistrationState  state = MM_MODEM_3GPP_REGISTRATION_STATE_UNKNOWN;
     MMModemAccessTechnology       access_tech = MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN;
     gulong                        lac = 0;
     gulong                        ci = 0;
     GError                       *error = NULL;
     gboolean                      success;
+    gboolean                      matched;
     gboolean                      cgreg = FALSE;
     gboolean                      cereg = FALSE;
     gboolean                      c5greg = FALSE;
-    guint                         regex_num = 0;
-    GPtrArray                    *array;
+    GRegex                        *regex;
 
     g_assert (reply);
     g_assert (test);
     g_assert (data);
     g_assert (result);
 
-    g_debug ("Testing '%s' +C%sREG %s response...",
+    g_debug ("Testing '%s' +C%sREG %s response '%s'...",
              test,
              result->cgreg ? "G" : "",
-             solicited ? "solicited" : "unsolicited");
+             solicited ? "solicited" : "unsolicited",
+             reply);
 
-    array = solicited ? data->solicited_creg : data->unsolicited_creg;
-    for (i = 0; i < array->len; i++) {
-        GRegex *r = g_ptr_array_index (array, i);
+    regex = solicited ? data->solicited_creg : data->unsolicited_creg;
+    g_regex_match (regex, reply, 0, &info);
 
-        if (g_regex_match (r, reply, 0, &info)) {
-            g_debug ("  matched with %d", i);
-            regex_num = i;
-            break;
-        }
-        g_clear_pointer (&info, g_match_info_free);
+    while (g_match_info_matches (info)) {
+        matched = TRUE;
+        success = mm_3gpp_parse_creg_response (info, NULL, &state, &lac, &ci, &access_tech, &cgreg, &cereg, &c5greg, &error);
+
+        g_assert (success);
+        g_assert_no_error (error);
+        g_match_info_next (info, NULL);
     }
 
-    g_debug ("  regex_num (%u) == result->regex_num (%u)",
-             regex_num,
-             result->regex_num);
-
-    g_assert (info != NULL);
-    g_assert_cmpuint (regex_num, ==, result->regex_num);
-
-    success = mm_3gpp_parse_creg_response (info, NULL, &state, &lac, &ci, &access_tech, &cgreg, &cereg, &c5greg, &error);
-
-    g_assert (success);
-    g_assert_no_error (error);
+    g_assert (matched);
     g_assert_cmpuint (state, ==, result->state);
     g_assert_cmpuint (lac, ==, result->lac);
     g_assert_cmpuint (ci, ==, result->ci);
@@ -1472,7 +1462,7 @@ test_creg_cgreg_multi_unsolicited (void *f, gpointer d)
 {
     RegTestData *data = (RegTestData *) d;
     const char *reply = "\r\n+CREG: 5\r\n\r\n+CGREG: 0\r\n";
-    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_ROAMING, 0, 0, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN, 0, FALSE, FALSE, FALSE };
+    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_IDLE, 0, 0, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN, 0, TRUE, FALSE, FALSE };
 
     test_creg_match ("Multi CREG/CGREG", FALSE, reply, data, &result);
 }
@@ -1482,9 +1472,19 @@ test_creg_cgreg_multi2_unsolicited (void *f, gpointer d)
 {
     RegTestData *data = (RegTestData *) d;
     const char *reply = "\r\n+CGREG: 0\r\n\r\n+CREG: 5\r\n";
-    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_IDLE, 0, 0, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN, 0, TRUE, FALSE, FALSE };
+    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_ROAMING, 0, 0, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN, 0, FALSE, FALSE, FALSE };
 
     test_creg_match ("Multi CREG/CGREG #2", FALSE, reply, data, &result);
+}
+
+static void
+test_cereg_multi_unsolicited (void *f, gpointer d)
+{
+    RegTestData *data = (RegTestData *) d;
+    const char *reply = "\r\n+CEREG:  2\r\n\r\n+CNSMOD: 8\r\n\r\n+CEREG: 1,AAAA,01234567,7\r\n";
+    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_HOME, 0xAAAA, 0x1234567, MM_MODEM_ACCESS_TECHNOLOGY_LTE, 5, FALSE, TRUE, FALSE };
+
+    test_creg_match ("Multi CEREG", FALSE, reply, data, &result);
 }
 
 static void
@@ -1516,6 +1516,16 @@ test_creg2_s8500_wave_multidigit_stat_unsolicited (void *f, gpointer d)
     const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_ATTACHED_RLOS, 0x003F, 0x8FE3, MM_MODEM_ACCESS_TECHNOLOGY_UNKNOWN, 8, FALSE, FALSE, FALSE };
 
     test_creg_match ("Samsung Wave S8500 CREG=2 with multidigit \"stat\" value", FALSE, reply, data, &result);
+}
+
+static void
+test_creg2_s8500_wave_act_unsolicited (void *f, gpointer d)
+{
+    RegTestData *data = (RegTestData *) d;
+    const char *reply = "\r\n+CGREG: 2,11,003F,8FE3, 10, C2816\r\n";
+    const CregResult result = { MM_MODEM_3GPP_REGISTRATION_STATE_ATTACHED_RLOS, 0x003F, 0x8FE3, MM_MODEM_ACCESS_TECHNOLOGY_LTE, 8, TRUE, FALSE, FALSE };
+
+    test_creg_match ("Samsung Wave S8500 CREG=2 with act value", FALSE, reply, data, &result);
 }
 
 static void
@@ -4872,6 +4882,114 @@ test_at_quote_string (void *f, gpointer d)
     }
 }
 
+static void
+test_remove_control_characters (void *f, gpointer d)
+{
+    gchar str1[] = "hello\r\nworld";
+    gchar str2[] = "no_controls";
+    gchar str3[] = "\r\n\t";
+
+    mm_utils_remove_control_characters (str1);
+    g_assert_cmpstr (str1, ==, "helloworld");
+
+    mm_utils_remove_control_characters (str2);
+    g_assert_cmpstr (str2, ==, "no_controls");
+
+    mm_utils_remove_control_characters (str3);
+    g_assert_cmpstr (str3, ==, "");
+
+    mm_utils_remove_control_characters (NULL);
+}
+
+static void
+test_is_valid_fqdn (void *f, gpointer d)
+{
+    g_assert (mm_utils_is_valid_fqdn ("google.com"));
+    g_assert (mm_utils_is_valid_fqdn ("a.b.c.d"));
+    g_assert (mm_utils_is_valid_fqdn ("valid-host.com"));
+    g_assert (mm_utils_is_valid_fqdn ("123.com"));
+    g_assert (mm_utils_is_valid_fqdn ("a"));
+
+    g_assert (!mm_utils_is_valid_fqdn (NULL));
+    g_assert (!mm_utils_is_valid_fqdn (""));
+    g_assert (!mm_utils_is_valid_fqdn ("invalid host.com"));
+    g_assert (!mm_utils_is_valid_fqdn ("host;com"));
+    g_assert (!mm_utils_is_valid_fqdn ("host\rcom"));
+    g_assert (!mm_utils_is_valid_fqdn ("host/com"));
+}
+
+static void
+test_is_numeric (void *f, gpointer d)
+{
+    g_assert (mm_utils_is_numeric ("123456"));
+    g_assert (mm_utils_is_numeric ("0"));
+    g_assert (mm_utils_is_numeric ("0123456789"));
+
+    g_assert (!mm_utils_is_numeric (NULL));
+    g_assert (!mm_utils_is_numeric (""));
+    g_assert (!mm_utils_is_numeric ("123a45"));
+    g_assert (!mm_utils_is_numeric ("123 45"));
+    g_assert (!mm_utils_is_numeric ("123\r45"));
+    g_assert (!mm_utils_is_numeric ("+123"));
+}
+
+static void
+test_is_valid_dial_number (void *f, gpointer d)
+{
+    GError   *error = NULL;
+    gboolean  r;
+
+    r = mm_utils_is_valid_dial_number ("123456", &error);
+    g_assert (r);
+    g_assert_no_error (error);
+
+    r = mm_utils_is_valid_dial_number ("+123456", &error);
+    g_assert (r);
+    g_assert_no_error (error);
+
+    r = mm_utils_is_valid_dial_number ("*123#", &error);
+    g_assert (r);
+    g_assert_no_error (error);
+
+    r = mm_utils_is_valid_dial_number ("123,456", &error);
+    g_assert (r);
+    g_assert_no_error (error);
+
+    r = mm_utils_is_valid_dial_number ("123W456", &error);
+    g_assert (r);
+    g_assert_no_error (error);
+
+    r = mm_utils_is_valid_dial_number (NULL, &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+
+    r = mm_utils_is_valid_dial_number ("", &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+
+    r = mm_utils_is_valid_dial_number ("123;456", &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+
+    r = mm_utils_is_valid_dial_number ("123\r456", &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+
+    r = mm_utils_is_valid_dial_number ("123\n456", &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+
+    r = mm_utils_is_valid_dial_number ("123\x01" "456", &error);
+    g_assert (!r);
+    g_assert_error (error, MM_CORE_ERROR, MM_CORE_ERROR_INVALID_ARGS);
+    g_clear_error (&error);
+}
+
 /*****************************************************************************/
 
 typedef struct {
@@ -5254,6 +5372,7 @@ int main (int argc, char **argv)
     g_test_suite_add (suite, TESTCASE (test_creg2_md400_unsolicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg2_s8500_wave_unsolicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg2_s8500_wave_multidigit_stat_unsolicited, reg_data));
+    g_test_suite_add (suite, TESTCASE (test_creg2_s8500_wave_act_unsolicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg2_gobi_weird_solicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg2_iridium_solicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg2_no_leading_zeros_solicited, reg_data));
@@ -5298,6 +5417,7 @@ int main (int argc, char **argv)
 
     g_test_suite_add (suite, TESTCASE (test_creg_cgreg_multi_unsolicited, reg_data));
     g_test_suite_add (suite, TESTCASE (test_creg_cgreg_multi2_unsolicited, reg_data));
+    g_test_suite_add (suite, TESTCASE (test_cereg_multi_unsolicited, reg_data));
 
     g_test_suite_add (suite, TESTCASE (test_cscs_icon225_support_response, NULL));
     g_test_suite_add (suite, TESTCASE (test_cscs_sierra_mercury_support_response, NULL));
@@ -5418,6 +5538,10 @@ int main (int argc, char **argv)
     g_test_suite_add (suite, TESTCASE (test_bcd_to_string, NULL));
 
     g_test_suite_add (suite, TESTCASE (test_at_quote_string, NULL));
+    g_test_suite_add (suite, TESTCASE (test_remove_control_characters, NULL));
+    g_test_suite_add (suite, TESTCASE (test_is_valid_fqdn, NULL));
+    g_test_suite_add (suite, TESTCASE (test_is_numeric, NULL));
+    g_test_suite_add (suite, TESTCASE (test_is_valid_dial_number, NULL));
 
     g_test_suite_add (suite, TESTCASE (test_cpol_response, NULL));
 

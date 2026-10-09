@@ -141,14 +141,13 @@ MMFlowControl mm_flow_control_from_string (const gchar  *str,
 gboolean mm_modem_3gpp_registration_state_is_registered (MMModem3gppRegistrationState state);
 
 /* Common Regex getters */
-GPtrArray *mm_3gpp_creg_regex_get     (gboolean solicited);
-void       mm_3gpp_creg_regex_destroy (GPtrArray *array);
-GRegex    *mm_3gpp_ciev_regex_get (void);
-GRegex    *mm_3gpp_cgev_regex_get (void);
-GRegex    *mm_3gpp_cusd_regex_get (void);
-GRegex    *mm_3gpp_cmti_regex_get (void);
-GRegex    *mm_3gpp_cds_regex_get (void);
-GRegex    *mm_3gpp_cbm_regex_get (void);
+GRegex *mm_3gpp_creg_regex_get (gboolean solicited);
+GRegex *mm_3gpp_ciev_regex_get (void);
+GRegex *mm_3gpp_cgev_regex_get (void);
+GRegex *mm_3gpp_cusd_regex_get (void);
+GRegex *mm_3gpp_cmti_regex_get (void);
+GRegex *mm_3gpp_cds_regex_get (void);
+GRegex *mm_3gpp_cbm_regex_get (void);
 
 /* AT+WS46=? response parser: returns array of MMModemMode values */
 GArray *mm_3gpp_parse_ws46_test_response (const gchar  *response,
@@ -570,6 +569,12 @@ gboolean mm_parse_supl_address (const gchar  *supl,
                                 guint32      *out_ip,
                                 guint16      *out_port,
                                 GError      **error);
+
+void mm_utils_remove_control_characters (gchar *str);
+gboolean mm_utils_is_valid_fqdn (const gchar *fqdn);
+gboolean mm_utils_is_numeric (const gchar *str);
+gboolean mm_utils_is_valid_dial_number (const gchar  *str,
+                                        GError      **error);
 
 gboolean mm_validate_cbs_channels (GArray   *channels,
                                    GError  **error);
